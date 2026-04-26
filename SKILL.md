@@ -36,13 +36,12 @@ Read these before running live operations:
 Read `scripts/.env` in this skill directory and look for:
 
 - `LARK_DOC_CLONER_PREFERRED_IDENTITY` — `bot` or `user`
-- `LARK_DOC_CLONER_TRANSFER_OWNERSHIP` — `true` or `false`
-- `LARK_DOC_CLONER_OWNER_OPEN_ID` — the user's `open_id`
+- `LARK_DOC_CLONER_OWNER_OPEN_ID` — optional fallback owner `open_id` for bot-created documents
 
-**If all required keys are present** (identity + transfer preference, and `open_id` when transfer is `true`):
+**If the identity preference is present**:
 → Skip to Step 3 directly. No questions needed.
 
-**If any required key is missing**:
+**If the identity preference is missing**:
 → Continue to Step 2 to ask the user once.
 
 ### Step 2 — Ask once, save permanently
@@ -53,31 +52,23 @@ Run identity detection first:
 python3 scripts/clone_lark_doc.py --check-identities
 ```
 
-Then ask the user **a single combined question** based on what's missing and what identities are available. Examples:
+Then ask the user **which identity to use** based on what's available. Examples:
 
 **Both bot and user available, no prefs saved:**
 > 复刻前需要确认几个偏好（之后不再询问）：
 >
-> 1. 使用哪个身份？**user**（所有权直接属于您）/ **bot**（机器人创建）
-> 2. 若选 bot：是否转移文档所有权给您？（是 / 否）
+> 使用哪个身份？**user**（所有权直接属于您）/ **bot**（机器人创建后默认转移所有权给当前用户）
 >
-> 示例回复：「bot，是」或「user」
+> 示例回复：「bot」或「user」
 
 **Only bot available, no prefs saved:**
-> 当前只有 **bot** 身份可用，是否需要将复刻后的文档所有权转移给您？（是 / 否）
-> 您的选择将被记住，下次不再询问。
+> 当前只有 **bot** 身份可用。复刻后会默认尝试将文档所有权转移给当前登录的 user。
+> 如果当前机器没有 user 登录，请先运行 `lark-cli auth login`，或提供您的飞书 `open_id`（格式：`ou_xxxxxxxx`）作为 `LARK_DOC_CLONER_OWNER_OPEN_ID`。
 
-After the user replies, handle `open_id` if needed:
-
-- Transfer = yes AND `LARK_DOC_CLONER_OWNER_OPEN_ID` missing:
-  > 还需要您的飞书 `open_id`（格式：`ou_xxxxxxxx`）以完成所有权转移，之后也不再询问。
-  Wait for user to provide it.
-
-Once all answers are collected, **write them to `scripts/.env`** using the Edit tool (append or update, never overwrite existing unrelated lines):
+Once the identity is collected, **write it to `scripts/.env`** using the Edit tool (append or update, never overwrite existing unrelated lines). Only write `LARK_DOC_CLONER_OWNER_OPEN_ID` when the user explicitly provided one:
 
 ```
 LARK_DOC_CLONER_PREFERRED_IDENTITY=bot
-LARK_DOC_CLONER_TRANSFER_OWNERSHIP=true
 LARK_DOC_CLONER_OWNER_OPEN_ID=ou_xxxxxxxx
 ```
 
@@ -86,8 +77,8 @@ LARK_DOC_CLONER_OWNER_OPEN_ID=ou_xxxxxxxx
 Build the command from saved (or just-collected) preferences:
 
 - `LARK_DOC_CLONER_PREFERRED_IDENTITY=user` → `--as user`
-- `LARK_DOC_CLONER_PREFERRED_IDENTITY=bot` + `LARK_DOC_CLONER_TRANSFER_OWNERSHIP=true` → `--as bot --owner-open-id <LARK_DOC_CLONER_OWNER_OPEN_ID>`
-- `LARK_DOC_CLONER_PREFERRED_IDENTITY=bot` + `LARK_DOC_CLONER_TRANSFER_OWNERSHIP=false` → `--as bot`
+- `LARK_DOC_CLONER_PREFERRED_IDENTITY=bot` → `--as bot`
+- If `LARK_DOC_CLONER_OWNER_OPEN_ID` is set, also pass `--owner-open-id <LARK_DOC_CLONER_OWNER_OPEN_ID>`. Otherwise the script will look up the current CLI user and transfer ownership to that user by default.
 
 Then run it per the Fast Path below.
 
@@ -107,7 +98,7 @@ python3 scripts/clone_lark_doc.py \
 Useful options:
 
 - `--as user|bot`: always set explicitly based on the user's choice in the Interactive Pre-Clone Flow.
-- `--owner-open-id ou_xxx`: pass only when user confirmed ownership transfer and `open_id` is available. Fallback order: command-line flag → `LARK_DOC_CLONER_OWNER_OPEN_ID` env var → `scripts/.env`.
+- `--owner-open-id ou_xxx`: optional explicit owner for bot-created documents. Fallback order: command-line flag → `LARK_DOC_CLONER_OWNER_OPEN_ID` env var → `scripts/.env` → current CLI user.
 - `--check-identities`: detect which identities (bot/user) are currently logged in without running a clone. Used in Step 1 of the Interactive Pre-Clone Flow.
 - `--name "New title"`: replace the cloned document `<title>`.
 - `--parent-token <token>`: create under a target folder or wiki node (xml-create path).
@@ -123,17 +114,11 @@ For long documents, the script intentionally avoids one giant create request bec
 
 After a successful run, always extract and send the user the new document link from the top-level `document_url` field. If `document_url` is empty, inspect `create_result.data.document.url` or `import_result` for the URL. Do not finish with only a token.
 
-If the clone was created with bot identity and `--owner-open-id` was provided, inspect `owner_transfer`:
+If the clone was created with bot identity, inspect `owner_transfer`:
 
-- `status: ok`: ownership was transferred to the provided `open_id`.
+- `status: ok`: ownership was transferred to the explicit owner `open_id` or current CLI user.
 - `status: failed`: report the transfer error, but keep the clone result and URL.
-- `status: skipped`: explain why ownership transfer was not attempted.
-
-If the clone was created with bot identity and no `--owner-open-id` was provided, inspect `permission_grant_to_current_user`:
-
-- `status: ok`: current CLI user was added with `full_access`.
-- `status: skipped`: explain why, usually no user login/open_id is available.
-- `status: failed`: report the permission error, but keep the clone result and URL.
+- `status: skipped`: explain why, usually because no user login/open_id is available.
 
 ## Manual XML Workflow
 
@@ -206,28 +191,19 @@ If `--as user` returns `need_user_authorization`, start scoped login with the ex
 
 If `--as bot` returns missing scope, give the user the `console_url`. Do not run `auth login` for bot.
 
-When bot creates the document, add current user management permission with:
+When bot creates the document, transfer ownership to the explicit `open_id` if provided; otherwise the script looks up the current CLI user and transfers ownership to that user:
 
 ```bash
 lark-cli contact +get-user --as user --format json
-lark-cli drive permission.members create \
-  --as bot \
-  --params '{"token":"<new_doc_token>","type":"docx","need_notification":false}' \
-  --data '{"member_type":"openid","member_id":"<current_user_open_id>","perm":"full_access","type":"user"}'
-```
-
-This grant is best-effort. If user identity is not logged in, report the skipped grant and still provide the created document URL.
-
-If the user provides an `open_id` and wants delete/owner-level control, transfer ownership instead of only adding `full_access`:
-
-```bash
 lark-cli drive permission.members transfer_owner \
   --as bot \
   --params '{"token":"<new_doc_token>","type":"docx","remove_old_owner":false,"old_owner_perm":"full_access","stay_put":false}' \
   --data '{"member_type":"openid","member_id":"<owner_open_id>"}'
 ```
 
-The script does this automatically when `--owner-open-id` or `LARK_DOC_CLONER_OWNER_OPEN_ID` is set.
+If the user identity is not logged in and no owner `open_id` is configured, report the skipped ownership transfer and still provide the created document URL.
+
+The script does this automatically for bot-created clones.
 
 Optional `.env` file next to the script:
 
@@ -244,7 +220,7 @@ After cloning, report:
 
 - New document URL from `document_url` or the create/import result. This is mandatory.
 - Whether the method was `xml-create` or `export-import`.
-- Which identity was used, whether ownership transfer succeeded when `--owner-open-id` was provided, or whether current-user `full_access` was granted when bot created the document.
+- Which identity was used, the `owner_open_id_source`, and whether `owner_transfer` succeeded when bot created the document.
 - Whether media/resource blocks may need manual inspection.
 - Known non-cloned items: comments, permissions, revision history, source wiki tree position, and possibly live embedded app state.
 

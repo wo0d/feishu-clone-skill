@@ -39,8 +39,16 @@ def read_dotenv_value(key: str, env_file: Path = SCRIPT_DIR / ".env") -> str | N
     return None
 
 
-def resolve_owner_open_id(cli_value: str | None) -> str | None:
-    return cli_value or os.environ.get("LARK_DOC_CLONER_OWNER_OPEN_ID") or read_dotenv_value("LARK_DOC_CLONER_OWNER_OPEN_ID")
+def resolve_configured_owner_open_id(cli_value: str | None) -> tuple[str | None, str]:
+    if cli_value:
+        return cli_value, "provided"
+    env_value = os.environ.get("LARK_DOC_CLONER_OWNER_OPEN_ID")
+    if env_value:
+        return env_value, "env"
+    dotenv_value = read_dotenv_value("LARK_DOC_CLONER_OWNER_OPEN_ID")
+    if dotenv_value:
+        return dotenv_value, "scripts.env"
+    return None, "none"
 
 
 def check_available_identities() -> dict[str, Any]:
@@ -130,40 +138,18 @@ def get_current_user_open_id() -> tuple[str | None, dict[str, Any] | None]:
     return find_key(payload, "open_id"), payload
 
 
-def grant_full_access_to_current_user(doc_token: str, identity: str) -> dict[str, Any]:
+def resolve_bot_owner_open_id(cli_value: str | None, identity: str) -> tuple[str | None, str, dict[str, Any] | None]:
     if identity != "bot":
-        return {"status": "skipped", "reason": "document was not created with bot identity"}
+        return None, "not_bot", None
+
+    configured_open_id, source = resolve_configured_owner_open_id(cli_value)
+    if configured_open_id:
+        return configured_open_id, source, None
 
     open_id, user_lookup = get_current_user_open_id()
-    if not open_id:
-        return {
-            "status": "skipped",
-            "reason": "no current user open_id available; run lark-cli auth login for user identity if user access is required",
-            "user_lookup": user_lookup,
-        }
-
-    cmd = [
-        "lark-cli",
-        "drive",
-        "permission.members",
-        "create",
-        "--as",
-        "bot",
-        "--params",
-        json.dumps({"token": doc_token, "type": "docx", "need_notification": False}, ensure_ascii=False),
-        "--data",
-        json.dumps({"member_type": "openid", "member_id": open_id, "perm": "full_access", "type": "user"}, ensure_ascii=False),
-        "--format",
-        "json",
-    ]
-    proc = subprocess.run(cmd, text=True, capture_output=True)
-    if proc.returncode != 0:
-        return {"status": "failed", "open_id": open_id, "error": parse_cli_failure(cmd, proc)}
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        payload = {"raw_stdout": proc.stdout, "stderr": proc.stderr}
-    return {"status": "ok", "open_id": open_id, "result": payload}
+    if open_id:
+        return open_id, "current_user", user_lookup
+    return None, "none", user_lookup
 
 
 def transfer_owner_to_open_id(doc_token: str, identity: str, owner_open_id: str | None) -> dict[str, Any]:
@@ -535,10 +521,14 @@ def clone_by_xml(
 
     append_results, failed_blocks = append_blocks_with_retry(doc_ref, blocks, identity, output_dir, max_chars=9000)
     owner_transfer = transfer_owner_to_open_id(doc_ref, identity, owner_open_id)
-    permission_grant = (
-        {"status": "skipped", "reason": "owner transfer was requested", "owner_transfer": owner_transfer}
-        if owner_open_id
-        else grant_full_access_to_current_user(doc_ref, identity)
+    ownership_policy = (
+        {
+            "mode": "transfer_owner",
+            "reason": "bot-created documents default to ownership transfer; no separate permission grant was attempted",
+            "owner_transfer": owner_transfer,
+        }
+        if identity == "bot"
+        else {"mode": "not_applicable", "reason": "document was created with user identity"}
     )
 
     return {
@@ -551,7 +541,7 @@ def clone_by_xml(
         "doc_ref": doc_ref,
         "document_url": find_document_url(create_result),
         "owner_transfer": owner_transfer,
-        "permission_grant_to_current_user": permission_grant,
+        "ownership_policy": ownership_policy,
         "content_file": str(full_content_file),
         "seed_file": str(seed_file),
         "create_result": create_result,
@@ -571,6 +561,7 @@ def clone_by_export(
     identity: str,
     name: str | None,
     folder_token: str | None,
+    owner_open_id: str | None,
     output_dir: Path,
 ) -> dict[str, Any]:
     fetched = fetch_source(source, identity)
@@ -584,6 +575,20 @@ def clone_by_export(
     clone_name = name or f"{source_title} - copy"
     export_type, export_result, exported_file = export_docx(document_id, identity, output_dir)
     import_result = import_docx(exported_file, identity, clone_name, folder_token)
+    doc_ref = find_doc_ref(import_result)
+    owner_transfer = transfer_owner_to_open_id(doc_ref or "", identity, owner_open_id) if doc_ref else {
+        "status": "skipped",
+        "reason": "could not find imported document token/url in import result",
+    }
+    ownership_policy = (
+        {
+            "mode": "transfer_owner",
+            "reason": "bot-created documents default to ownership transfer",
+            "owner_transfer": owner_transfer,
+        }
+        if identity == "bot"
+        else {"mode": "not_applicable", "reason": "document was created with user identity"}
+    )
 
     return {
         "ok": True,
@@ -594,7 +599,10 @@ def clone_by_export(
         "clone_name": clone_name,
         "export_type": export_type,
         "exported_file": str(exported_file),
+        "doc_ref": doc_ref,
         "document_url": find_document_url(import_result),
+        "owner_transfer": owner_transfer,
+        "ownership_policy": ownership_policy,
         "import_result": import_result,
         "notices": collect_notice(fetched, export_result, import_result),
         "limitations": [
@@ -623,7 +631,7 @@ def main() -> int:
     parser.add_argument("--parent-position", help="Parent position for docs +create, e.g. my_library")
     parser.add_argument("--folder-token", help="Target Drive folder token for --method export-import")
     parser.add_argument("--as", dest="identity", choices=["auto", "user", "bot"], default="auto", help="Lark identity. auto uses bot when current CLI identity is bot, otherwise user.")
-    parser.add_argument("--owner-open-id", help="Open ID to receive ownership when the document is created by bot. Fallbacks: LARK_DOC_CLONER_OWNER_OPEN_ID env var, then scripts/.env.")
+    parser.add_argument("--owner-open-id", help="Open ID to receive ownership when the document is created by bot. Fallbacks: LARK_DOC_CLONER_OWNER_OPEN_ID env var, scripts/.env, then current CLI user.")
     parser.add_argument(
         "--method",
         choices=["xml-create", "export-import"],
@@ -650,14 +658,16 @@ def main() -> int:
         if not args.source:
             parser.error("source is required unless --check-identities is used")
         identity = resolve_identity(args.identity)
-        owner_open_id = resolve_owner_open_id(args.owner_open_id)
+        owner_open_id, owner_open_id_source, owner_user_lookup = resolve_bot_owner_open_id(args.owner_open_id, identity)
         if args.method == "xml-create":
             result = clone_by_xml(args.source, identity, args.name, args.parent_token, args.parent_position, owner_open_id, output_dir)
         else:
-            result = clone_by_export(args.source, identity, args.name, args.folder_token, output_dir)
+            result = clone_by_export(args.source, identity, args.name, args.folder_token, owner_open_id, output_dir)
         result["requested_identity"] = args.identity
         result["identity"] = identity
-        result["owner_open_id_source"] = "provided" if owner_open_id else "none"
+        result["owner_open_id_source"] = owner_open_id_source
+        if owner_user_lookup is not None:
+            result["owner_user_lookup"] = owner_user_lookup
         result["workdir"] = str(output_dir)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

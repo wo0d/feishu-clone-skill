@@ -26,13 +26,12 @@ Then edit values as needed:
 
 ```bash
 # LARK_DOC_CLONER_PREFERRED_IDENTITY=bot
-# LARK_DOC_CLONER_TRANSFER_OWNERSHIP=false
 # LARK_DOC_CLONER_OWNER_OPEN_ID=ou_xxxxxxxx
 ```
 
 Leave values commented to trigger the first-run preference prompt. Uncomment them only if you want to preconfigure this machine.
 
-Only set `LARK_DOC_CLONER_OWNER_OPEN_ID` when ownership transfer is enabled.
+When cloning as bot, ownership is transferred by default. Only set `LARK_DOC_CLONER_OWNER_OPEN_ID` when the current CLI user cannot be detected or you want to transfer ownership to a specific user.
 
 ## Usage
 
@@ -46,7 +45,7 @@ python3 scripts/clone_lark_doc.py "https://example.feishu.cn/wiki/xxxxx" --as bo
 Useful options:
 
 - `--as user|bot`: choose the Lark identity explicitly.
-- `--owner-open-id ou_xxx`: transfer ownership when created by bot.
+- `--owner-open-id ou_xxx`: override the owner for bot-created clones. If omitted, the script transfers ownership to the current CLI user.
 - `--name "New title"`: override the cloned document title.
 - `--method export-import`: optional fallback when source export is allowed.
 
