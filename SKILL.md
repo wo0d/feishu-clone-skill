@@ -39,7 +39,7 @@ Read `scripts/.env` in this skill directory and look for:
 - `LARK_DOC_CLONER_OWNER_OPEN_ID` — optional fallback owner `open_id` for bot-created documents
 
 **If the identity preference is present**:
-→ Skip to Step 3 directly. No questions needed.
+→ Continue to Step 3. If the saved identity is `bot`, still perform the bot ownership preflight in Step 3 before cloning.
 
 **If the identity preference is missing**:
 → Continue to Step 2 to ask the user once.
@@ -63,7 +63,7 @@ Then ask the user **which identity to use** based on what's available. Examples:
 
 **Only bot available, no prefs saved:**
 > 当前只有 **bot** 身份可用。复刻后会默认尝试将文档所有权转移给当前登录的 user。
-> 如果当前机器没有 user 登录，请先运行 `lark-cli auth login`，或提供您的飞书 `open_id`（格式：`ou_xxxxxxxx`）作为 `LARK_DOC_CLONER_OWNER_OPEN_ID`。
+> 复制前我会先检查能否获取当前 user 的 `open_id`；如果拿不到，会提醒您提供 `open_id`。
 
 Once the identity is collected, **write it to `scripts/.env`** using the Edit tool (append or update, never overwrite existing unrelated lines). Only write `LARK_DOC_CLONER_OWNER_OPEN_ID` when the user explicitly provided one:
 
@@ -79,6 +79,22 @@ Build the command from saved (or just-collected) preferences:
 - `LARK_DOC_CLONER_PREFERRED_IDENTITY=user` → `--as user`
 - `LARK_DOC_CLONER_PREFERRED_IDENTITY=bot` → `--as bot`
 - If `LARK_DOC_CLONER_OWNER_OPEN_ID` is set, also pass `--owner-open-id <LARK_DOC_CLONER_OWNER_OPEN_ID>`. Otherwise the script will look up the current CLI user and transfer ownership to that user by default.
+
+Before cloning with `--as bot`, perform this ownership preflight:
+
+1. If `LARK_DOC_CLONER_OWNER_OPEN_ID` is already saved in `scripts/.env`, use it.
+2. Otherwise run:
+
+```bash
+lark-cli contact +get-user --as user --format json
+```
+
+3. If the command returns an `open_id`, proceed; the script will transfer ownership to that current user.
+4. If no `open_id` is available, remind the user before cloning:
+
+> 我当前拿不到您的飞书 `open_id`，bot 复刻后的文档将无法自动转移所有权给您。请提供 `open_id`（格式：`ou_xxxxxxxx`），或先运行 `lark-cli auth login` 后再继续。也可以回复「继续」先完成复刻，稍后再处理所有权。
+
+If the user provides an `open_id`, write it to `scripts/.env` as `LARK_DOC_CLONER_OWNER_OPEN_ID` and pass it with `--owner-open-id`. If the user explicitly chooses to continue without it, run the clone anyway and report that ownership transfer will be skipped.
 
 Then run it per the Fast Path below.
 
