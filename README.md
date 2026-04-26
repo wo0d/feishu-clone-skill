@@ -14,9 +14,7 @@ After updating the repository, run the same command again on each machine to ref
 
 ## Local Config
 
-Local preferences live in `scripts/.env` and are intentionally not committed.
-
-Create it from the example:
+To preconfigure this skill on a machine, create a local config file from the example:
 
 ```bash
 cp scripts/env.example scripts/.env
