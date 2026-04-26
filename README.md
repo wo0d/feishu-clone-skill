@@ -25,10 +25,12 @@ cp scripts/env.example scripts/.env
 Then edit values as needed:
 
 ```bash
-LARK_DOC_CLONER_PREFERRED_IDENTITY=bot
-LARK_DOC_CLONER_TRANSFER_OWNERSHIP=false
-LARK_DOC_CLONER_OWNER_OPEN_ID=ou_xxxxxxxx
+# LARK_DOC_CLONER_PREFERRED_IDENTITY=bot
+# LARK_DOC_CLONER_TRANSFER_OWNERSHIP=false
+# LARK_DOC_CLONER_OWNER_OPEN_ID=ou_xxxxxxxx
 ```
+
+Leave values commented to trigger the first-run preference prompt. Uncomment them only if you want to preconfigure this machine.
 
 Only set `LARK_DOC_CLONER_OWNER_OPEN_ID` when ownership transfer is enabled.
 
