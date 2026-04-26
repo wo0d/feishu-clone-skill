@@ -113,7 +113,7 @@ def check_available_identities() -> dict[str, Any]:
     list_output = (list_proc.stdout + list_proc.stderr).strip()
     no_user_note = "No user logged in" in status_payload.get("note", "")
     no_user_list = "No logged-in" in list_output
-    if not no_user_note and not no_user_list:
+    if list_proc.returncode == 0 and not no_user_note and not no_user_list:
         available.append("user")
         details["user"] = {"available": True, "list_output": list_output}
     else:
