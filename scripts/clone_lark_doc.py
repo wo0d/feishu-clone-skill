@@ -22,6 +22,38 @@ from typing import Any
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+REQUIRED_LARK_SKILLS = ("lark-shared", "lark-doc", "lark-drive", "lark-wiki")
+
+
+def check_dependencies() -> None:
+    missing: list[str] = []
+    if not shutil.which("lark-cli"):
+        missing.append("lark-cli")
+
+    skills_root = Path.home() / ".agents" / "skills"
+    missing_skills = [skill for skill in REQUIRED_LARK_SKILLS if not (skills_root / skill / "SKILL.md").exists()]
+    if missing_skills:
+        missing.append("official lark skills: " + ", ".join(missing_skills))
+
+    if not missing:
+        return
+
+    raise RuntimeError(
+        json.dumps(
+            {
+                "error": "Missing Feishu/Lark dependencies",
+                "missing": missing,
+                "install_commands": [
+                    "npm install -g @larksuite/cli",
+                    "npx -y skills add larksuite/cli -y -g",
+                    "npx -y skills add https://github.com/wo0d/feishu-clone-skill.git -y -g",
+                ],
+                "note": "Install these dependencies yourself, or authorize the agent to install them, then retry.",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 def read_dotenv_value(key: str, env_file: Path = SCRIPT_DIR / ".env") -> str | None:
@@ -643,14 +675,17 @@ def main() -> int:
     args = parser.parse_args()
 
     temp_dir: str | None = None
-    if args.workdir:
-        output_dir = Path(args.workdir).expanduser().resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
-    else:
-        temp_dir = tempfile.mkdtemp(prefix="lark-doc-clone-")
-        output_dir = Path(temp_dir)
+    output_dir = Path(args.workdir).expanduser().resolve() if args.workdir else Path(tempfile.gettempdir())
 
     try:
+        check_dependencies()
+
+        if args.workdir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            temp_dir = tempfile.mkdtemp(prefix="lark-doc-clone-")
+            output_dir = Path(temp_dir)
+
         if args.check_identities:
             result = check_available_identities()
             print(json.dumps(result, ensure_ascii=False, indent=2))

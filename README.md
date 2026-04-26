@@ -4,13 +4,20 @@
 
 ## Install
 
-Install from a Git repository:
+Install the Feishu/Lark dependencies first:
+
+```bash
+npm install -g @larksuite/cli
+npx -y skills add larksuite/cli -y -g
+```
+
+Then install this skill:
 
 ```bash
 npx -y skills add https://github.com/wo0d/feishu-clone-skill.git -y -g
 ```
 
-After updating the repository, run the same command again on each machine to refresh the installed skill.
+After updating either repository, run the corresponding `skills add` command again on each machine to refresh the installed skill files.
 
 ## Local Config
 

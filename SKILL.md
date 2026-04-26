@@ -27,6 +27,14 @@ Read these before running live operations:
 - `lark-drive` only when importing local files, using Drive-level copy, or handling permissions.
 - `lark-wiki` only when the target is a wiki node/space or source wiki node metadata is needed.
 
+If `lark-cli` or the required official lark skills are missing, stop before cloning and ask the user to install the dependencies or authorize the agent to install them:
+
+```bash
+npm install -g @larksuite/cli
+npx -y skills add larksuite/cli -y -g
+npx -y skills add https://github.com/wo0d/feishu-clone-skill.git -y -g
+```
+
 ## Interactive Pre-Clone Flow
 
 **MANDATORY: Always execute these steps before running the clone script. Never skip to the Fast Path directly.**
