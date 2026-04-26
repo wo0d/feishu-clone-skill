@@ -19,7 +19,7 @@ Local preferences live in `scripts/.env` and are intentionally not committed.
 Create it from the example:
 
 ```bash
-cp scripts/.env.example scripts/.env
+cp scripts/env.example scripts/.env
 ```
 
 Then edit values as needed:
