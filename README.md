@@ -1,13 +1,13 @@
 # Feishu Clone
 
-`feishu-clone` is a Codex skill for cloning Feishu/Lark wiki or doc links into a new document. It uses `lark-cli docs +fetch` to read source XML, creates a new document, then appends the fetched blocks in batches.
+`feishu-clone` is an AI skill for cloning Feishu/Lark wiki or doc links into a new document. It uses `lark-cli docs +fetch` to read source XML, creates a new document, then appends the fetched blocks in batches.
 
 ## Install
 
 Install from a Git repository:
 
 ```bash
-npx -y skills add https://github.com/<your-name>/feishu-clone-skill -y -g
+npx -y skills add https://github.com/wo0d/feishu-clone-skill.git -y -g
 ```
 
 After updating the repository, run the same command again on each machine to refresh the installed skill.
