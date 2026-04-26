@@ -1,0 +1,4 @@
+interface:
+  display_name: "Feishu Clone"
+  short_description: "Clone Feishu/Lark wiki or doc links into a new owned document."
+  default_prompt: "Clone this Feishu/Lark wiki or doc into a new document I own: <paste link>"

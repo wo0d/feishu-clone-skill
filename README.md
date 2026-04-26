@@ -1,0 +1,55 @@
+# Feishu Clone
+
+`feishu-clone` is a Codex skill for cloning Feishu/Lark wiki or doc links into a new document. It uses `lark-cli docs +fetch` to read source XML, creates a new document, then appends the fetched blocks in batches.
+
+## Install
+
+Install from a Git repository:
+
+```bash
+npx -y skills add https://github.com/<your-name>/feishu-clone-skill -y -g
+```
+
+After updating the repository, run the same command again on each machine to refresh the installed skill.
+
+## Local Config
+
+Local preferences live in `scripts/.env` and are intentionally not committed.
+
+Create it from the example:
+
+```bash
+cp scripts/.env.example scripts/.env
+```
+
+Then edit values as needed:
+
+```bash
+LARK_DOC_CLONER_PREFERRED_IDENTITY=bot
+LARK_DOC_CLONER_TRANSFER_OWNERSHIP=false
+LARK_DOC_CLONER_OWNER_OPEN_ID=ou_xxxxxxxx
+```
+
+Only set `LARK_DOC_CLONER_OWNER_OPEN_ID` when ownership transfer is enabled.
+
+## Usage
+
+Run commands from this skill directory:
+
+```bash
+python3 scripts/clone_lark_doc.py --check-identities
+python3 scripts/clone_lark_doc.py "https://example.feishu.cn/wiki/xxxxx" --as bot
+```
+
+Useful options:
+
+- `--as user|bot`: choose the Lark identity explicitly.
+- `--owner-open-id ou_xxx`: transfer ownership when created by bot.
+- `--name "New title"`: override the cloned document title.
+- `--method export-import`: optional fallback when source export is allowed.
+
+## Notes
+
+- Do not commit `scripts/.env`; it may contain local identity preferences or personal `open_id` values.
+- XML cloning is best effort. Comments, permissions, version history, and some embedded resources are not exact copies.
+- For exact Drive-level copies, prefer `drive.files.copy` when source and target tokens are available.
