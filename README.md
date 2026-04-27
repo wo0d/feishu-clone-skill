@@ -8,13 +8,13 @@ Install the Feishu/Lark dependencies first:
 
 ```bash
 npm install -g @larksuite/cli
-npx -y skills add larksuite/cli -y -g
+npx -y -g skills add larksuite/cli
 ```
 
 Then install this skill:
 
 ```bash
-npx -y skills add https://github.com/wo0d/feishu-clone-skill.git -y -g
+npx -y -g skills add https://github.com/wo0d/feishu-clone-skill.git
 ```
 
 After updating either repository, run the corresponding `skills add` command again on each machine to refresh the installed skill files.
