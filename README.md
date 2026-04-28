@@ -16,6 +16,12 @@ Then install this skill:
 npx -y skills add https://github.com/wo0d/feishu-clone-skill.git --global --all
 ```
 
+Recommended but not required: install the official Lark skills as agent workflow references.
+
+```bash
+npx -y skills add larksuite/cli --global --all
+```
+
 After updating either repository, run the corresponding `skills add` command again on each machine to refresh the installed skill files.
 
 The Python script only requires `lark-cli` at runtime. Official Lark skills such as `lark-doc`, `lark-drive`, `lark-wiki`, and `lark-shared` are optional references for agent workflows. When present, agents may look for them under `~/.agents/skills`, `~/.codex/skills`, or `~/.claude/skills`.
