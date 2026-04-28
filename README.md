@@ -4,11 +4,10 @@
 
 ## Install
 
-Install the Feishu/Lark dependencies first:
+Install the required Feishu/Lark CLI first:
 
 ```bash
 npm install -g @larksuite/cli
-npx -y -g skills add larksuite/cli
 ```
 
 Then install this skill:
@@ -18,6 +17,8 @@ npx -y -g skills add https://github.com/wo0d/feishu-clone-skill.git
 ```
 
 After updating either repository, run the corresponding `skills add` command again on each machine to refresh the installed skill files.
+
+The Python script only requires `lark-cli` at runtime. Official Lark skills such as `lark-doc`, `lark-drive`, `lark-wiki`, and `lark-shared` are optional references for agent workflows. When present, agents may look for them under `~/.agents/skills`, `~/.codex/skills`, or `~/.claude/skills`.
 
 ## Local Config
 
