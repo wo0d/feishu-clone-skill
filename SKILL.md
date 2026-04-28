@@ -1,6 +1,6 @@
 ---
 name: feishu-clone
-description: Clone Feishu/Lark wiki or doc links into a new document without relying on source export permission. Use when the user asks to 复刻、复制、克隆、另存为、搬运、备份 a Feishu/Lark Wiki node or Doc/Docx document from a URL into their own cloud document, preserving the fetched XML structure and embedded media tokens as much as Lark docs create/update APIs allow, and optionally transferring bot-created document ownership to a configured owner open_id.
+description: Clone Feishu/Lark wiki or doc links into a new document without relying on source export permission. Use when the user asks to 复刻、复制、克隆、另存为、搬运、备份 a Feishu/Lark Wiki node or Doc/Docx document from a URL into their own cloud document, preserving the fetched XML structure and embedded media tokens as much as Lark docs create/update APIs allow, and transferring bot-created document ownership to a configured owner open_id or current CLI user when available.
 ---
 
 # Feishu Clone
@@ -43,7 +43,7 @@ npx -y skills add https://github.com/wo0d/feishu-clone-skill.git -y -g
 
 Read `scripts/.env` in this skill directory and look for:
 
-- `LARK_DOC_CLONER_PREFERRED_IDENTITY` — `bot` or `user`
+- `LARK_DOC_CLONER_PREFERRED_IDENTITY` — `bot` or `user`; this is an agent workflow preference, not a value consumed by `clone_lark_doc.py` directly
 - `LARK_DOC_CLONER_OWNER_OPEN_ID` — optional fallback owner `open_id` for bot-created documents
 
 **If the identity preference is present**:
@@ -82,7 +82,7 @@ LARK_DOC_CLONER_OWNER_OPEN_ID=ou_xxxxxxxx
 
 ### Step 3 — Run the clone
 
-Build the command from saved (or just-collected) preferences:
+Build the command from saved (or just-collected) preferences. The script does not read `LARK_DOC_CLONER_PREFERRED_IDENTITY`; always convert it into an explicit `--as` flag:
 
 - `LARK_DOC_CLONER_PREFERRED_IDENTITY=user` → `--as user`
 - `LARK_DOC_CLONER_PREFERRED_IDENTITY=bot` → `--as bot`
@@ -121,7 +121,7 @@ python3 scripts/clone_lark_doc.py \
 
 Useful options:
 
-- `--as user|bot`: always set explicitly based on the user's choice in the Interactive Pre-Clone Flow.
+- `--as user|bot`: always set explicitly based on the user's choice in the Interactive Pre-Clone Flow. Direct script usage defaults to `auto`; it does not read `LARK_DOC_CLONER_PREFERRED_IDENTITY`.
 - `--owner-open-id ou_xxx`: optional explicit owner for bot-created documents. Fallback order: command-line flag → `LARK_DOC_CLONER_OWNER_OPEN_ID` env var → `scripts/.env` → current CLI user.
 - `--check-identities`: detect which identities (bot/user) are currently logged in without running a clone. Used in Step 1 of the Interactive Pre-Clone Flow.
 - `--name "New title"`: replace the cloned document `<title>`.
@@ -233,10 +233,14 @@ Optional `.env` file next to the script:
 
 ```bash
 # scripts/.env
+# Used by this agent skill to decide which explicit --as flag to pass.
+LARK_DOC_CLONER_PREFERRED_IDENTITY=bot
+
+# Read by the script as a fallback owner for bot-created clones.
 LARK_DOC_CLONER_OWNER_OPEN_ID=ou_xxx
 ```
 
-Only store non-secret defaults such as `open_id` here. Do not put app secrets or access tokens in this file.
+Only store non-secret defaults such as identity preference and `open_id` here. Do not put app secrets or access tokens in this file.
 
 ## Quality Check
 

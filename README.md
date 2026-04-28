@@ -34,9 +34,11 @@ Then edit values as needed:
 # LARK_DOC_CLONER_OWNER_OPEN_ID=ou_xxxxxxxx
 ```
 
-Leave values commented to trigger the first-run preference prompt. Uncomment them only if you want to preconfigure this machine.
+Leave values commented to trigger the first-run preference prompt when an agent uses this skill.
 
-When cloning as bot, ownership is transferred by default. Only set `LARK_DOC_CLONER_OWNER_OPEN_ID` when the current CLI user cannot be detected or you want to transfer ownership to a specific user.
+`LARK_DOC_CLONER_PREFERRED_IDENTITY` is used by the agent workflow to decide which explicit `--as user|bot` flag to pass. The Python script does not read this value directly; when running the script yourself, pass `--as` explicitly.
+
+When cloning as bot, the script attempts to transfer ownership by default. It uses `--owner-open-id` first, then `LARK_DOC_CLONER_OWNER_OPEN_ID` from the environment or `scripts/.env`, then the current CLI user if one is logged in. Only set `LARK_DOC_CLONER_OWNER_OPEN_ID` when the current CLI user cannot be detected or you want to transfer ownership to a specific user.
 
 ## Usage
 
@@ -57,5 +59,6 @@ Useful options:
 ## Notes
 
 - Do not commit `scripts/.env`; it may contain local identity preferences or personal `open_id` values.
+- Direct script runs do not consume `LARK_DOC_CLONER_PREFERRED_IDENTITY`; use `--as user` or `--as bot`.
 - XML cloning is best effort. Comments, permissions, version history, and some embedded resources are not exact copies.
 - For exact Drive-level copies, prefer `drive.files.copy` when source and target tokens are available.
