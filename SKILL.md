@@ -18,20 +18,25 @@ Default to this path:
 
 This path only needs readable source content plus permission to create a new document. It does not require source export permission.
 
-## Required Companion Skills
+## Optional Reference Skills
 
-Read these before running live operations:
+The clone script only requires `lark-cli` at runtime. The official Lark skills below are optional references for agent workflows and troubleshooting:
 
 - `lark-shared` for authentication, identity, scopes, and permission errors.
 - `lark-doc` for `docs +fetch`, `docs +create`, and `docs +update`.
 - `lark-drive` only when importing local files, using Drive-level copy, or handling permissions.
 - `lark-wiki` only when the target is a wiki node/space or source wiki node metadata is needed.
 
-If `lark-cli` or the required official lark skills are missing, stop before cloning and ask the user to install the dependencies or authorize the agent to install them:
+When looking up optional Lark skills, check all of these roots:
+
+- `~/.agents/skills`
+- `~/.codex/skills`
+- `~/.claude/skills`
+
+If `lark-cli` is missing, stop before cloning and ask the user to install it or authorize the agent to install it:
 
 ```bash
 npm install -g @larksuite/cli
-npx -y skills add larksuite/cli -y -g
 npx -y skills add https://github.com/wo0d/feishu-clone-skill.git -y -g
 ```
 

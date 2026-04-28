@@ -22,17 +22,30 @@ from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REQUIRED_LARK_SKILLS = ("lark-shared", "lark-doc", "lark-drive", "lark-wiki")
+LARK_SKILL_ROOTS = (".agents/skills", ".codex/skills", ".claude/skills")
+
+
+def lark_skill_search_roots() -> list[Path]:
+    home = Path.home()
+    return [home / root for root in LARK_SKILL_ROOTS]
+
+
+def find_lark_skill(skill: str) -> Path | None:
+    for skills_root in lark_skill_search_roots():
+        skill_file = skills_root / skill / "SKILL.md"
+        if skill_file.exists():
+            return skill_file
+    return None
+
+
+def find_reference_lark_skills() -> dict[str, str | None]:
+    return {skill: str(path) if (path := find_lark_skill(skill)) else None for skill in REQUIRED_LARK_SKILLS}
 
 
 def check_dependencies() -> None:
     missing: list[str] = []
     if not shutil.which("lark-cli"):
         missing.append("lark-cli")
-
-    skills_root = Path.home() / ".agents" / "skills"
-    missing_skills = [skill for skill in REQUIRED_LARK_SKILLS if not (skills_root / skill / "SKILL.md").exists()]
-    if missing_skills:
-        missing.append("official lark skills: " + ", ".join(missing_skills))
 
     if not missing:
         return
@@ -44,10 +57,9 @@ def check_dependencies() -> None:
                 "missing": missing,
                 "install_commands": [
                     "npm install -g @larksuite/cli",
-                    "npx -y skills add larksuite/cli -y -g",
                     "npx -y skills add https://github.com/wo0d/feishu-clone-skill.git -y -g",
                 ],
-                "note": "Install these dependencies yourself, or authorize the agent to install them, then retry.",
+                "note": "Install lark-cli yourself, or authorize the agent to install it, then retry. Official lark skills are optional references for agent workflows.",
             },
             ensure_ascii=False,
             indent=2,
