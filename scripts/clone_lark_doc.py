@@ -16,7 +16,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -350,17 +349,102 @@ def replace_title(content: str, new_title: str | None) -> str:
     return f"<title>{escaped}</title>\n{content}"
 
 
+def iter_top_level_xml_elements(content: str) -> list[tuple[str, str]]:
+    elements: list[tuple[str, str]] = []
+    stack: list[str] = []
+    element_start: int | None = None
+    index = 0
+
+    while index < len(content):
+        if content[index] != "<":
+            index += 1
+            continue
+
+        if content.startswith("<!--", index):
+            end = content.find("-->", index + 4)
+            if end == -1:
+                raise ValueError("Unclosed XML comment")
+            index = end + 3
+            continue
+
+        if content.startswith("<![CDATA[", index):
+            end = content.find("]]>", index + 9)
+            if end == -1:
+                raise ValueError("Unclosed XML CDATA section")
+            index = end + 3
+            continue
+
+        if content.startswith("<?", index):
+            end = content.find("?>", index + 2)
+            if end == -1:
+                raise ValueError("Unclosed XML processing instruction")
+            index = end + 2
+            continue
+
+        tag_end = find_tag_end(content, index)
+        tag_text = content[index : tag_end + 1]
+        tag_name = parse_tag_name(tag_text)
+        if not tag_name:
+            index = tag_end + 1
+            continue
+
+        is_closing = tag_text.startswith("</")
+        is_self_closing = tag_text.rstrip().endswith("/>")
+        if is_closing:
+            if not stack or stack[-1] != tag_name:
+                raise ValueError(f"Unexpected closing tag: {tag_name}")
+            stack.pop()
+            if not stack and element_start is not None:
+                elements.append((tag_name, content[element_start : tag_end + 1]))
+                element_start = None
+        else:
+            if not stack:
+                element_start = index
+            if is_self_closing:
+                if not stack and element_start is not None:
+                    elements.append((tag_name, content[element_start : tag_end + 1]))
+                    element_start = None
+            else:
+                stack.append(tag_name)
+
+        index = tag_end + 1
+
+    if stack:
+        raise ValueError(f"Unclosed XML tag: {stack[-1]}")
+    return elements
+
+
+def find_tag_end(content: str, start: int) -> int:
+    quote: str | None = None
+    for index in range(start + 1, len(content)):
+        char = content[index]
+        if quote:
+            if char == quote:
+                quote = None
+            continue
+        if char in ("'", '"'):
+            quote = char
+            continue
+        if char == ">":
+            return index
+    raise ValueError("Unclosed XML tag")
+
+
+def parse_tag_name(tag_text: str) -> str | None:
+    match = re.match(r"</?\s*([A-Za-z_][\w:.-]*)", tag_text)
+    return match.group(1) if match else None
+
+
 def split_top_level_blocks(content: str) -> tuple[str, list[str]]:
-    root = ET.fromstring(f"<root>{content}</root>")
     title = "Untitled Lark document"
     blocks: list[str] = []
-    for child in list(root):
-        text = ET.tostring(child, encoding="unicode", method="xml")
-        if child.tag == "title":
-            title = re.sub(r"<[^>]+>", "", text).strip() or title
+    for tag_name, element_xml in iter_top_level_xml_elements(content):
+        if tag_name == "title":
+            title_text = re.sub(r"<[^>]+>", "", element_xml).strip()
+            title = html.unescape(title_text) or title
             continue
-        blocks.append(text)
-    return html.unescape(title), blocks
+        blocks.append(element_xml)
+    return title, blocks
 
 
 def chunk_blocks(blocks: list[str], max_chars: int) -> list[list[str]]:
