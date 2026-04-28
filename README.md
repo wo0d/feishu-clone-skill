@@ -13,7 +13,7 @@ npm install -g @larksuite/cli
 Then install this skill:
 
 ```bash
-npx -y -g skills add https://github.com/wo0d/feishu-clone-skill.git
+npx -y skills add https://github.com/wo0d/feishu-clone-skill.git --global --all
 ```
 
 After updating either repository, run the corresponding `skills add` command again on each machine to refresh the installed skill files.
