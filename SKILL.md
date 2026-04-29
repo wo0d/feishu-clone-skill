@@ -15,6 +15,7 @@ Default to this path:
 2. Create a new title-only document with `lark-cli docs +create --api-version v2 --doc-format xml`.
 3. Parse the fetched XML into top-level blocks and append them in batches with `docs +update --command append`.
 4. If one batch fails, split it and retry; if one block still fails, record that block and continue.
+5. After append, fetch source and clone XML with `--detail full` and repair cloned image `width`/`height` with `block_replace` when Lark normalized images to square dimensions.
 
 This path only needs readable source content plus permission to create a new document. It does not require source export permission.
 

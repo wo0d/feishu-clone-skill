@@ -292,22 +292,23 @@ def extract_required_scope(message: str) -> str | None:
     return match.group(1) if match else None
 
 
-def fetch_source(source: str, identity: str) -> dict[str, Any]:
-    return run_json(
-        [
-            "lark-cli",
-            "docs",
-            "+fetch",
-            "--api-version",
-            "v2",
-            "--doc",
-            source,
-            "--as",
-            identity,
-            "--format",
-            "json",
-        ]
-    )
+def fetch_source(source: str, identity: str, detail: str | None = None) -> dict[str, Any]:
+    cmd = [
+        "lark-cli",
+        "docs",
+        "+fetch",
+        "--api-version",
+        "v2",
+        "--doc",
+        source,
+        "--as",
+        identity,
+        "--format",
+        "json",
+    ]
+    if detail:
+        cmd.extend(["--detail", detail])
+    return run_json(cmd)
 
 
 def create_from_xml(content_file: Path, identity: str, parent_token: str | None, parent_position: str | None) -> dict[str, Any]:
@@ -344,6 +345,29 @@ def append_xml(doc: str, content_file: Path, identity: str) -> dict[str, Any]:
         "append",
         "--doc",
         doc,
+        "--content",
+        f"@{content_file.name}",
+        "--as",
+        identity,
+    ]
+    return run_json(cmd, cwd=content_file.parent)
+
+
+def block_replace_xml(doc: str, block_id: str, content_file: Path, identity: str) -> dict[str, Any]:
+    cmd = [
+        "lark-cli",
+        "docs",
+        "+update",
+        "--api-version",
+        "v2",
+        "--doc-format",
+        "xml",
+        "--command",
+        "block_replace",
+        "--doc",
+        doc,
+        "--block-id",
+        block_id,
         "--content",
         f"@{content_file.name}",
         "--as",
@@ -459,6 +483,112 @@ def split_top_level_blocks(content: str) -> tuple[str, list[str]]:
     return title, blocks
 
 
+def get_xml_attr(tag_text: str, name: str) -> str | None:
+    match = re.search(rf'\b{re.escape(name)}="([^"]*)"', tag_text)
+    return match.group(1) if match else None
+
+
+def set_xml_attr(tag_text: str, name: str, value: str) -> str:
+    escaped = html.escape(value, quote=True)
+    if re.search(rf'\b{re.escape(name)}="[^"]*"', tag_text):
+        return re.sub(rf'\b{re.escape(name)}="[^"]*"', f'{name}="{escaped}"', tag_text, count=1)
+    if tag_text.endswith("/>"):
+        return f'{tag_text[:-2]} {name}="{escaped}"/>'
+    if tag_text.endswith("</img>"):
+        open_end = tag_text.find(">")
+        if open_end != -1:
+            return f'{tag_text[:open_end]} {name}="{escaped}"{tag_text[open_end:]}'
+    return f'{tag_text[:-1]} {name}="{escaped}">'
+
+
+def extract_img_tags(block_xml: str) -> list[str]:
+    return re.findall(r"<img\b[^>]*(?:/>|></img>)", block_xml)
+
+
+def top_level_block_id(block_xml: str) -> str | None:
+    tag_end = find_tag_end(block_xml, 0) if block_xml.startswith("<") else -1
+    if tag_end == -1:
+        return None
+    return get_xml_attr(block_xml[: tag_end + 1], "id")
+
+
+def patch_image_dimensions(block_xml: str, dimensions: list[tuple[str, str]]) -> str:
+    index = 0
+
+    def replace_img(match: re.Match[str]) -> str:
+        nonlocal index
+        tag = match.group(0)
+        width, height = dimensions[index]
+        index += 1
+        tag = set_xml_attr(tag, "width", width)
+        tag = set_xml_attr(tag, "height", height)
+        return tag
+
+    patched = re.sub(r"<img\b[^>]*(?:/>|></img>)", replace_img, block_xml)
+    if index != len(dimensions):
+        raise ValueError(f"Expected to patch {len(dimensions)} images, patched {index}")
+    return patched
+
+
+def is_empty_paragraph_block(block_xml: str) -> bool:
+    return bool(re.fullmatch(r"<p(?:\s+[^>]*)?>\s*</p>", block_xml, flags=re.S))
+
+
+def build_image_dimension_repair_blocks(source_content: str, clone_content: str) -> list[dict[str, Any]]:
+    """Build block_replace payloads that restore cloned image width/height.
+
+    飞书 XML create/update 会把部分图片写成 512x512。这里按顶层块顺序匹配源文档
+    和复制文档，只修复复制文档图片节点的 width/height，保留复制文档自己的资源 token。
+    """
+    _, source_blocks = split_top_level_blocks(source_content)
+    _, clone_blocks = split_top_level_blocks(clone_content)
+    if len(clone_blocks) == len(source_blocks) + 1 and clone_blocks and is_empty_paragraph_block(clone_blocks[0]):
+        clone_blocks = clone_blocks[1:]
+    if len(source_blocks) != len(clone_blocks):
+        raise ValueError(f"Top-level block count mismatch: source={len(source_blocks)} clone={len(clone_blocks)}")
+
+    repairs: list[dict[str, Any]] = []
+    for block_index, (source_block, clone_block) in enumerate(zip(source_blocks, clone_blocks), start=1):
+        source_imgs = extract_img_tags(source_block)
+        clone_imgs = extract_img_tags(clone_block)
+        if not source_imgs and not clone_imgs:
+            continue
+        if len(source_imgs) != len(clone_imgs):
+            raise ValueError(
+                f"Image count mismatch in top-level block {block_index}: source={len(source_imgs)} clone={len(clone_imgs)}"
+            )
+
+        dimensions: list[tuple[str, str]] = []
+        needs_repair = False
+        for source_img, clone_img in zip(source_imgs, clone_imgs):
+            source_width = get_xml_attr(source_img, "width")
+            source_height = get_xml_attr(source_img, "height")
+            clone_width = get_xml_attr(clone_img, "width")
+            clone_height = get_xml_attr(clone_img, "height")
+            if not source_width or not source_height:
+                continue
+            dimensions.append((source_width, source_height))
+            if (source_width, source_height) != (clone_width, clone_height):
+                needs_repair = True
+
+        if not dimensions or not needs_repair:
+            continue
+        if len(dimensions) != len(clone_imgs):
+            raise ValueError(f"Missing source image dimensions in top-level block {block_index}")
+        block_id = top_level_block_id(clone_block)
+        if not block_id:
+            raise ValueError(f"Missing clone top-level block id for image repair in block {block_index}")
+        repairs.append(
+            {
+                "block_index": block_index,
+                "block_id": block_id,
+                "image_count": len(dimensions),
+                "content": patch_image_dimensions(clone_block, dimensions),
+            }
+        )
+    return repairs
+
+
 def chunk_blocks(blocks: list[str], max_chars: int) -> list[list[str]]:
     chunks: list[list[str]] = []
     current: list[str] = []
@@ -539,6 +669,57 @@ def append_blocks_with_retry(
     for index, chunk in enumerate(chunk_blocks(blocks, max_chars), start=1):
         append_group(chunk, f"chunk-{index:04d}")
     return append_results, failed_blocks
+
+
+def repair_cloned_image_dimensions(source: str, doc: str, identity: str, output_dir: Path) -> dict[str, Any]:
+    """Restore image width/height after XML clone when Lark normalizes images."""
+    try:
+        source_fetched = fetch_source(source, identity, detail="full")
+        clone_fetched = fetch_source(doc, identity, detail="full")
+        source_content = source_fetched.get("data", {}).get("document", {}).get("content", "")
+        clone_content = clone_fetched.get("data", {}).get("document", {}).get("content", "")
+        if not source_content or not clone_content:
+            return {
+                "status": "skipped",
+                "reason": "missing full-detail source or cloned document content",
+            }
+        repairs = build_image_dimension_repair_blocks(source_content, clone_content)
+    except Exception as exc:
+        return {"status": "failed", "stage": "prepare", "error": str(exc)}
+
+    results: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for index, repair in enumerate(repairs, start=1):
+        repair_file = output_dir / f"image-dimension-repair-{index:04d}.xml"
+        repair_file.write_text(repair["content"], encoding="utf-8")
+        try:
+            result = block_replace_xml(doc, repair["block_id"], repair_file, identity)
+        except Exception as exc:
+            failures.append(
+                {
+                    "block_index": repair["block_index"],
+                    "block_id": repair["block_id"],
+                    "image_count": repair["image_count"],
+                    "error": str(exc),
+                }
+            )
+            continue
+        results.append(
+            {
+                "block_index": repair["block_index"],
+                "block_id": repair["block_id"],
+                "image_count": repair["image_count"],
+                "result": result,
+            }
+        )
+
+    return {
+        "status": "failed" if failures else "ok",
+        "repair_blocks": len(repairs),
+        "repaired_blocks": len(results),
+        "repaired_images": sum(item["image_count"] for item in results),
+        "failed_blocks": failures,
+    }
 
 
 def extract_title(content: str, fallback: str) -> str:
@@ -648,6 +829,7 @@ def clone_by_xml(
         raise RuntimeError(json.dumps({"error": "Could not find new document token/url in create result", "create_result": create_result}, ensure_ascii=False))
 
     append_results, failed_blocks = append_blocks_with_retry(doc_ref, blocks, identity, output_dir, max_chars=9000)
+    image_dimension_repair = repair_cloned_image_dimensions(source, doc_ref, identity, output_dir)
     owner_transfer = transfer_owner_to_open_id(doc_ref, identity, owner_open_id)
     ownership_policy = (
         {
@@ -675,10 +857,12 @@ def clone_by_xml(
         "create_result": create_result,
         "append_batches": len(append_results),
         "failed_blocks": failed_blocks,
+        "image_dimension_repair": image_dimension_repair,
         "notices": collect_notice(fetched, create_result),
         "limitations": [
             "This path does not need source export permission.",
             "Comments, version history, permissions, and wiki tree position are not cloned.",
+            "Image width/height is repaired after clone when full-detail XML exposes the original dimensions.",
             "Embedded media and resource blocks are preserved only when Lark docs +create accepts the fetched XML tokens.",
         ],
     }
