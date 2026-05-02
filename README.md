@@ -13,13 +13,13 @@ npm install -g @larksuite/cli
 Then install this skill:
 
 ```bash
-npx -y skills add https://github.com/wo0d/feishu-clone-skill.git --global --all
+npx skills add https://github.com/wo0d/feishu-clone-skill.git -g -y
 ```
 
 Recommended but not required: install the official Lark skills as agent workflow references.
 
 ```bash
-npx -y skills add larksuite/cli --global --all
+npx skills add larksuite/cli -g -y
 ```
 
 After updating either repository, run the corresponding `skills add` command again on each machine to refresh the installed skill files.
