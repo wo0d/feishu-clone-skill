@@ -223,6 +223,7 @@ def transfer_owner_to_open_id(doc_token: str, identity: str, owner_open_id: str 
         json.dumps({"member_type": "openid", "member_id": owner_open_id}, ensure_ascii=False),
         "--format",
         "json",
+        "--yes",
     ]
     proc = subprocess.run(cmd, text=True, capture_output=True)
     if proc.returncode != 0:

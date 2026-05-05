@@ -228,7 +228,8 @@ lark-cli contact +get-user --as user --format json
 lark-cli drive permission.members transfer_owner \
   --as bot \
   --params '{"token":"<new_doc_token>","type":"docx","remove_old_owner":false,"old_owner_perm":"full_access","stay_put":false}' \
-  --data '{"member_type":"openid","member_id":"<owner_open_id>"}'
+  --data '{"member_type":"openid","member_id":"<owner_open_id>"}' \
+  --yes
 ```
 
 If the user identity is not logged in and no owner `open_id` is configured, report the skipped ownership transfer and still provide the created document URL.
