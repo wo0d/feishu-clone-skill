@@ -1,6 +1,6 @@
 # Feishu Clone
 
-`feishu-clone` is an AI skill for cloning Feishu/Lark wiki or doc links into a new document. It uses `lark-cli docs +fetch` to read source XML, creates a new document, appends the fetched blocks in batches, then repairs cloned image width/height when Lark normalizes images to square dimensions.
+`feishu-clone` is an AI skill for cloning Feishu/Lark wiki or doc links into a new document. It uses `lark-cli docs +fetch` to read source XML, creates a new document, copies full-detail source image dimensions into the append XML, appends the fetched blocks in batches, then falls back to repairing cloned image width/height when Lark still normalizes images to square dimensions.
 
 ## Install
 
@@ -68,5 +68,5 @@ Useful options:
 - Do not commit `scripts/.env`; it may contain local identity preferences or personal `open_id` values.
 - Direct script runs do not consume `LARK_DOC_CLONER_PREFERRED_IDENTITY`; use `--as user` or `--as bot`.
 - XML cloning is best effort. Comments, permissions, version history, grid column width ratios, and some embedded resources are not exact copies.
-- After XML cloning, the script fetches source and cloned documents with full XML detail and uses `block_replace` to restore image `width`/`height` when those dimensions are available.
+- During XML cloning, the script fetches full-detail source XML to seed image `width`/`height` before append; after cloning, it still uses `block_replace` as a fallback when those dimensions need repair.
 - For exact Drive-level copies, prefer `drive.files.copy` when source and target tokens are available.

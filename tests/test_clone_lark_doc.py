@@ -8,7 +8,13 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from clone_lark_doc import build_image_dimension_repair_blocks, check_dependencies, find_lark_skill, split_top_level_blocks
+from clone_lark_doc import (
+    build_image_dimension_repair_blocks,
+    check_dependencies,
+    clone_by_xml,
+    find_lark_skill,
+    split_top_level_blocks,
+)
 
 
 class SplitTopLevelBlocksTest(unittest.TestCase):
@@ -53,6 +59,51 @@ class DependencyCheckTest(unittest.TestCase):
 
 
 class ImageDimensionRepairTest(unittest.TestCase):
+    def test_clone_by_xml_writes_source_image_dimensions_on_initial_append(self) -> None:
+        simple_content = (
+            "<title>Source</title>"
+            '<p>Before</p>'
+            '<img name="wide.png" src="img-token"></img>'
+        )
+        full_content = (
+            "<title>Source</title>"
+            '<p id="src-p">Before</p>'
+            '<img id="src-img" name="wide.png" src="img-token" width="863" height="450"></img>'
+        )
+        fetch_calls: list[tuple[str | None, str]] = []
+        appended_content: list[str] = []
+
+        def fake_fetch_source(source: str, identity: str, detail: str | None = None) -> dict[str, object]:
+            content = full_content if detail == "full" else simple_content
+            fetch_calls.append((detail, content))
+            return {"data": {"document": {"document_id": "source-doc", "content": content}}}
+
+        def fake_append_xml(doc: str, content_file: Path, identity: str) -> dict[str, object]:
+            appended_content.append(content_file.read_text(encoding="utf-8"))
+            return {"ok": True}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("clone_lark_doc.fetch_source", side_effect=fake_fetch_source),
+                patch(
+                    "clone_lark_doc.create_from_xml",
+                    return_value={"data": {"document": {"document_id": "clone-doc", "url": "https://example.feishu.cn/docx/clone-doc"}}},
+                ),
+                patch("clone_lark_doc.append_xml", side_effect=fake_append_xml),
+                patch("clone_lark_doc.repair_cloned_image_dimensions", return_value={"status": "ok", "repair_blocks": 0}),
+                patch("clone_lark_doc.transfer_owner_to_open_id", return_value={"status": "skipped"}),
+            ):
+                result = clone_by_xml("https://example.feishu.cn/wiki/source", "bot", None, None, None, None, Path(temp_dir))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(fetch_calls), 2)
+        self.assertEqual(fetch_calls[0][0], None)
+        self.assertEqual(fetch_calls[1][0], "full")
+        self.assertEqual(len(appended_content), 1)
+        self.assertIn('<p>Before</p>', appended_content[0])
+        self.assertIn('<img name="wide.png" src="img-token" width="863" height="450"></img>', appended_content[0])
+        self.assertNotIn('id="src-img"', appended_content[0])
+
     def test_builds_repair_blocks_for_top_level_image_blocks(self) -> None:
         source = (
             '<title>Source</title>'

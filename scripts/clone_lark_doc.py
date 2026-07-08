@@ -590,6 +590,96 @@ def build_image_dimension_repair_blocks(source_content: str, clone_content: str)
     return repairs
 
 
+def apply_source_image_dimensions_to_blocks(blocks: list[str], source_content_with_dimensions: str) -> tuple[list[str], dict[str, Any]]:
+    """Copy source image width/height into append blocks before writing them.
+
+    The clone uses simple fetched XML for insertion because full-detail XML
+    carries source block IDs. Full-detail XML is only used as the dimension
+    source, so new documents do not receive IDs from the source document.
+    """
+    _, source_blocks = split_top_level_blocks(source_content_with_dimensions)
+    if len(source_blocks) != len(blocks):
+        return blocks, {
+            "status": "skipped",
+            "reason": "top-level block count mismatch",
+            "append_blocks": len(blocks),
+            "source_full_blocks": len(source_blocks),
+        }
+
+    patched_blocks: list[str] = []
+    skipped_blocks: list[dict[str, Any]] = []
+    dimensioned_blocks = 0
+    dimensioned_images = 0
+    source_image_blocks = 0
+
+    for block_index, (block, source_block) in enumerate(zip(blocks, source_blocks), start=1):
+        append_imgs = extract_img_tags(block)
+        source_imgs = extract_img_tags(source_block)
+        if not append_imgs and not source_imgs:
+            patched_blocks.append(block)
+            continue
+
+        source_image_blocks += 1
+        if len(append_imgs) != len(source_imgs):
+            skipped_blocks.append(
+                {
+                    "block_index": block_index,
+                    "reason": "image count mismatch",
+                    "append_images": len(append_imgs),
+                    "source_full_images": len(source_imgs),
+                }
+            )
+            patched_blocks.append(block)
+            continue
+
+        dimensions: list[tuple[str, str]] = []
+        missing_dimensions = False
+        for source_img in source_imgs:
+            source_width = get_xml_attr(source_img, "width")
+            source_height = get_xml_attr(source_img, "height")
+            if not source_width or not source_height:
+                missing_dimensions = True
+                break
+            dimensions.append((source_width, source_height))
+
+        if missing_dimensions:
+            skipped_blocks.append(
+                {
+                    "block_index": block_index,
+                    "reason": "missing source image dimensions",
+                    "image_count": len(source_imgs),
+                }
+            )
+            patched_blocks.append(block)
+            continue
+
+        patched_block = patch_image_dimensions(block, dimensions)
+        patched_blocks.append(patched_block)
+        if patched_block != block:
+            dimensioned_blocks += 1
+            dimensioned_images += len(dimensions)
+
+    if dimensioned_images:
+        status = "partial" if skipped_blocks else "ok"
+        reason = None
+    elif source_image_blocks:
+        status = "skipped"
+        reason = "no append blocks needed image dimension changes"
+    else:
+        status = "skipped"
+        reason = "no images found"
+
+    result: dict[str, Any] = {
+        "status": status,
+        "dimensioned_blocks": dimensioned_blocks,
+        "dimensioned_images": dimensioned_images,
+        "skipped_blocks": skipped_blocks,
+    }
+    if reason:
+        result["reason"] = reason
+    return patched_blocks, result
+
+
 def chunk_blocks(blocks: list[str], max_chars: int) -> list[list[str]]:
     chunks: list[list[str]] = []
     current: list[str] = []
@@ -672,12 +762,19 @@ def append_blocks_with_retry(
     return append_results, failed_blocks
 
 
-def repair_cloned_image_dimensions(source: str, doc: str, identity: str, output_dir: Path) -> dict[str, Any]:
+def repair_cloned_image_dimensions(
+    source: str,
+    doc: str,
+    identity: str,
+    output_dir: Path,
+    source_content: str | None = None,
+) -> dict[str, Any]:
     """Restore image width/height after XML clone when Lark normalizes images."""
     try:
-        source_fetched = fetch_source(source, identity, detail="full")
+        if source_content is None:
+            source_fetched = fetch_source(source, identity, detail="full")
+            source_content = source_fetched.get("data", {}).get("document", {}).get("content", "")
         clone_fetched = fetch_source(doc, identity, detail="full")
-        source_content = source_fetched.get("data", {}).get("document", {}).get("content", "")
         clone_content = clone_fetched.get("data", {}).get("document", {}).get("content", "")
         if not source_content or not clone_content:
             return {
@@ -817,8 +914,22 @@ def clone_by_xml(
         raise RuntimeError(json.dumps({"error": "No data.document.document_id/content in fetch result", "fetch": fetched}, ensure_ascii=False))
 
     source_title, blocks = split_top_level_blocks(content)
+    full_source_content: str | None = None
+    try:
+        full_fetched = fetch_source(source, identity, detail="full")
+        full_source_content = full_fetched.get("data", {}).get("document", {}).get("content", "")
+        if full_source_content:
+            blocks, image_dimension_seed = apply_source_image_dimensions_to_blocks(blocks, full_source_content)
+        else:
+            image_dimension_seed = {
+                "status": "skipped",
+                "reason": "missing full-detail source document content",
+            }
+    except Exception as exc:
+        image_dimension_seed = {"status": "failed", "stage": "prepare", "error": str(exc)}
+
     clone_name = name or f"{source_title} - copy"
-    full_content = replace_title(content, clone_name)
+    full_content = f"<title>{html.escape(clone_name, quote=False)}</title>{''.join(blocks)}"
     full_content_file = output_dir / "clone-content.xml"
     full_content_file.write_text(full_content, encoding="utf-8")
 
@@ -830,7 +941,7 @@ def clone_by_xml(
         raise RuntimeError(json.dumps({"error": "Could not find new document token/url in create result", "create_result": create_result}, ensure_ascii=False))
 
     append_results, failed_blocks = append_blocks_with_retry(doc_ref, blocks, identity, output_dir, max_chars=9000)
-    image_dimension_repair = repair_cloned_image_dimensions(source, doc_ref, identity, output_dir)
+    image_dimension_repair = repair_cloned_image_dimensions(source, doc_ref, identity, output_dir, source_content=full_source_content)
     owner_transfer = transfer_owner_to_open_id(doc_ref, identity, owner_open_id)
     ownership_policy = (
         {
@@ -858,12 +969,13 @@ def clone_by_xml(
         "create_result": create_result,
         "append_batches": len(append_results),
         "failed_blocks": failed_blocks,
+        "image_dimension_seed": image_dimension_seed,
         "image_dimension_repair": image_dimension_repair,
         "notices": collect_notice(fetched, create_result),
         "limitations": [
             "This path does not need source export permission.",
             "Comments, version history, permissions, and wiki tree position are not cloned.",
-            "Image width/height is repaired after clone when full-detail XML exposes the original dimensions.",
+            "Image width/height is copied from full-detail source XML before append and repaired after clone when needed.",
             "Embedded media and resource blocks are preserved only when Lark docs +create accepts the fetched XML tokens.",
         ],
     }
